@@ -2,7 +2,10 @@
 #Powershell script for calling a package from a client. Client calls this script to deploy software to itself.
 
 param (
-    [Parameter(Mandatory=$true)][string]$package
+    [Parameter(Mandatory=$true)]
+    [string]$Package,
+    [int]$BeginDeploymentTimeout = 40,
+    [int]$DeploymentTimeout = 1800
 )
 
 #function borrowed from http://gallery.technet.microsoft.com/scriptcenter/Powershell-script-to-33887eb2#content
@@ -28,15 +31,17 @@ Invoke-Command -ComputerName Servername.corp.com -ScriptBlock { Set-Location "C:
 
 #wait for the package to start by waiting for the lock file to appear
 ## This is good for when deployments may be queued up if PDQ deployment server is heavily used.
-$LockfileExist=$false
-Do{
-If(Test-Path 'c:\windows\AdminArsenal\PDQDeployRunner\service-1.lock') {$LockfileExist = $true} Else {Write-Host 'Waiting PDQ install to start on ' $env:COMPUTERNAME ; Start-Sleep -s 10}
-}
-Until (($LockfileExist) -or ($StopWatch.elapsed -ge $timeout))
+$timerStart = Get-Date
+do {
+    Write-Host "Waiting for PDQ install to start on $env:COMPUTERNAME"
+    Start-Sleep -Seconds 10
+} until ((Test-Path "$env:SystemRoot\AdminArsenal\PDQDeployRunner\service-1.lock") -or
+        ((Get-Date) - $timerStart).TotalSeconds -gt $BeginDeploymentTimeout )
 
 ### Check if the package is still running by looking for the lock file to disappear
-$fileDeleted=$false
-Do{
-If(Test-Path 'c:\windows\AdminArsenal\PDQDeployRunner\service-1.lock') {Write-Host 'PDQ install started: waiting to complete on ' $env:COMPUTERNAME; Start-Sleep -s 10} Else {$fileDeleted = $true}
-}
-Until ($fileDeleted)
+$timerStart = Get-Date
+do {
+    Write-Host 'PDQ install started: waiting to complete on ' $env:COMPUTERNAME
+    Start-Sleep -Seconds 10
+} until (-not (Test-Path "$env:SystemRoot\AdminArsenal\PDQDeployRunner\service-1.lock") -or
+        ((Get-Date) - $timerStart).TotalSeconds -gt $DeploymentTimeout )
